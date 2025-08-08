@@ -1,4 +1,19 @@
-# excel_toolkit/excelapp.py
+# -*- coding: utf-8 -*-
+"""
+File: excelapp.py
+Author: Your Name / Tên của bạn
+Description: Chứa class ExcelApp để quản lý toàn bộ tiến trình Excel.
+
+--- CHANGELOG ---
+Version 0.2.0 (2025-08-08):
+    - Thêm phương thức .convert_to_xlsx() để chuyển đổi các định dạng file khác sang .xlsx.
+
+Version 0.1.0 (2025-08-08):
+    - Khởi tạo class ExcelApp với các tính năng cơ bản.
+    - Methods: .open(), .new(), .get_workbook(), .get_active_workbook(), .wait_for_workbook().
+    - Hỗ trợ context manager ('with' statement) để quản lý vòng đời an toàn.
+-------------------
+"""
 
 import xlwings as xw
 import os
@@ -68,12 +83,10 @@ class ExcelApp:
             print("INFO: Không có workbook nào đang mở.")
             return None
         
-        # Mặc định lấy workbook đang active
         if specifier is None:
             return self.get_active_workbook()
 
         try:
-            # Thử lấy bằng tên hoặc index
             xlw_book = self._app.books[specifier]
             print(f"INFO: Gắn vào workbook theo tiêu chí '{specifier}'. Tên file: {xlw_book.name}")
             return Workbook(xlw_book, self)
@@ -95,19 +108,8 @@ class ExcelApp:
     def wait_for_workbook(self, title_contains=None, title_is=None, timeout=30):
         """
         Chờ cho đến khi một workbook thỏa mãn điều kiện xuất hiện.
-
-        Args:
-            title_contains (str, optional): Chờ workbook có tên chứa chuỗi này.
-            title_is (str, optional): Chờ workbook có tên chính xác là chuỗi này.
-            timeout (int, optional): Thời gian chờ tối đa (giây). Mặc định là 30.
-
-        Returns:
-            Workbook: Đối tượng Workbook tìm thấy, hoặc None nếu hết thời gian chờ.
         """
-        print(f"INFO: Đang chờ workbook (timeout={timeout}s)... Điều kiện: "
-              f"{'tên chứa ' + title_contains if title_contains else ''}"
-              f"{'tên là ' + title_is if title_is else ''}")
-
+        print(f"INFO: Đang chờ workbook (timeout={timeout}s)...")
         start_time = time.time()
         while time.time() - start_time < timeout:
             for book in self._app.books:
@@ -121,10 +123,51 @@ class ExcelApp:
                     print(f"SUCCESS: Đã tìm thấy workbook '{book.name}'.")
                     return Workbook(book, self)
             
-            time.sleep(1) # Chờ 1 giây trước khi kiểm tra lại
+            time.sleep(1)
 
         print(f"ERROR: Hết thời gian chờ ({timeout}s). Không tìm thấy workbook thỏa mãn điều kiện.")
         return None
+
+    def convert_to_xlsx(self, source_path, destination_path=None):
+        """
+        Mở một file (ví dụ: .csv, .xls, .xlsm) và lưu nó thành định dạng .xlsx.
+
+        Args:
+            source_path (str or Path): Đường dẫn đến file nguồn.
+            destination_path (str or Path, optional): Đường dẫn file .xlsx đích. 
+                                                     Nếu None, sẽ lưu cùng tên và thư mục với file nguồn.
+
+        Returns:
+            Workbook: Đối tượng Workbook của file .xlsx mới được tạo, hoặc None nếu thất bại.
+        """
+        source_path = Path(source_path)
+        if not destination_path:
+            destination_path = source_path.with_suffix('.xlsx')
+        else:
+            destination_path = Path(destination_path)
+
+        print(f"INFO: Bắt đầu quá trình chuyển đổi '{source_path.name}' -> '{destination_path.name}'...")
+        
+        temp_wb = None
+        try:
+            # Mở file nguồn
+            temp_xlw_book = self._app.books.open(source_path)
+            # Lưu lại với định dạng mới (Excel tự động xác định định dạng .xlsx)
+            temp_xlw_book.save(destination_path)
+            # Đóng file nguồn
+            temp_xlw_book.close()
+            print(f"SUCCESS: Chuyển đổi thành công. File được lưu tại: {destination_path}")
+            
+            # Mở lại file .xlsx vừa tạo để trả về đối tượng Workbook
+            return self.open(destination_path)
+
+        except Exception as e:
+            print(f"ERROR: Quá trình chuyển đổi thất bại. Lỗi: {e}")
+            # Đảm bảo đóng workbook tạm thời nếu có lỗi xảy ra
+            if temp_wb:
+                temp_wb.close()
+            return None
+
 
     def quit(self):
         """
@@ -149,4 +192,3 @@ class ExcelApp:
             print("INFO: Đã gửi lệnh buộc đóng.")
         except Exception as e:
             print(f"ERROR: Không thể thực thi lệnh taskkill. Lỗi: {e}")
-
