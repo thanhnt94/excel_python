@@ -2,15 +2,13 @@
 
 import xlwings as xw
 import os
+import time
 from pathlib import Path
-from .workbook import Workbook  # Sử dụng import tương đối để gọi đến file workbook.py
+from .workbook import Workbook  # Sử dụng import tương đối
 
 class ExcelApp:
     """
     Lớp quản lý chính, đại diện cho một tiến trình (instance) của ứng dụng Excel.
-
-    Hoạt động như một context manager để đảm bảo việc khởi tạo và
-    đóng ứng dụng được xử lý một cách an toàn và tự động.
     """
 
     def __init__(self, visible=True, add_book=False):
@@ -44,9 +42,9 @@ class ExcelApp:
         print(f"INFO: Đang mở workbook từ: {file_path}")
         try:
             xlw_book = self._app.books.open(
-                file_path, 
-                password=password, 
-                read_only=read_only, 
+                file_path,
+                password=password,
+                read_only=read_only,
                 ignore_read_only_recommended=True
             )
             return Workbook(xlw_book, self)
@@ -62,64 +60,70 @@ class ExcelApp:
         xlw_book = self._app.books.add()
         return Workbook(xlw_book, self)
 
-    def get_active_workbook(self):
-        """
-        Lấy workbook đang được kích hoạt (active) trong ứng dụng Excel.
-
-        Returns:
-            Workbook: Đối tượng Workbook đang active, hoặc None nếu không có.
-        """
-        if not self._app.books:
-            print("INFO: Không có workbook nào đang mở.")
-            return None
-        
-        active_book = self._app.books.active
-        if active_book:
-            print(f"INFO: Gắn vào workbook đang active: {active_book.name}")
-            return Workbook(active_book, self)
-        
-        print("INFO: Không có workbook nào đang được active.")
-        return None
-
     def get_workbook(self, specifier=None):
         """
-        Lấy một workbook đã mở dựa trên một tiêu chí cụ thể.
-
-        Args:
-            specifier (str or int, optional):
-                - Nếu là str: Tên của workbook (ví dụ: 'BaoCao.xlsx').
-                - Nếu là int: Index của workbook trong danh sách (0 là file mở đầu tiên, -1 là file mở cuối cùng).
-                - Nếu là None (mặc định): Sẽ lấy workbook đang active.
-
-        Returns:
-            Workbook: Đối tượng Workbook tìm thấy, hoặc None nếu không có.
+        Lấy một workbook đã mở dựa trên một tiêu chí cụ thể (tên, index, hoặc active).
         """
         if not self._app.books:
             print("INFO: Không có workbook nào đang mở.")
             return None
-
+        
+        # Mặc định lấy workbook đang active
         if specifier is None:
             return self.get_active_workbook()
 
-        if isinstance(specifier, str):
-            try:
-                xlw_book = self._app.books[specifier]
-                print(f"INFO: Gắn vào workbook theo tên: {specifier}")
-                return Workbook(xlw_book, self)
-            except Exception:
-                print(f"ERROR: Không tìm thấy workbook nào có tên '{specifier}'.")
-                return None
-        
-        if isinstance(specifier, int):
-            try:
-                xlw_book = self._app.books[specifier]
-                print(f"INFO: Gắn vào workbook theo index: {specifier} (Tên file: {xlw_book.name})")
-                return Workbook(xlw_book, self)
-            except IndexError:
-                print(f"ERROR: Index {specifier} nằm ngoài phạm vi. Số workbook đang mở: {len(self._app.books)}.")
-                return None
-        
-        print(f"ERROR: Loại specifier không hợp lệ: {type(specifier)}.")
+        try:
+            # Thử lấy bằng tên hoặc index
+            xlw_book = self._app.books[specifier]
+            print(f"INFO: Gắn vào workbook theo tiêu chí '{specifier}'. Tên file: {xlw_book.name}")
+            return Workbook(xlw_book, self)
+        except Exception:
+            print(f"ERROR: Không tìm thấy workbook nào khớp với '{specifier}'.")
+            return None
+
+    def get_active_workbook(self):
+        """
+        Lấy workbook đang được kích hoạt (active) trong ứng dụng Excel.
+        """
+        if self._app.books.active:
+            active_book = self._app.books.active
+            print(f"INFO: Gắn vào workbook đang active: {active_book.name}")
+            return Workbook(active_book, self)
+        print("INFO: Không có workbook nào đang được active.")
+        return None
+
+    def wait_for_workbook(self, title_contains=None, title_is=None, timeout=30):
+        """
+        Chờ cho đến khi một workbook thỏa mãn điều kiện xuất hiện.
+
+        Args:
+            title_contains (str, optional): Chờ workbook có tên chứa chuỗi này.
+            title_is (str, optional): Chờ workbook có tên chính xác là chuỗi này.
+            timeout (int, optional): Thời gian chờ tối đa (giây). Mặc định là 30.
+
+        Returns:
+            Workbook: Đối tượng Workbook tìm thấy, hoặc None nếu hết thời gian chờ.
+        """
+        print(f"INFO: Đang chờ workbook (timeout={timeout}s)... Điều kiện: "
+              f"{'tên chứa ' + title_contains if title_contains else ''}"
+              f"{'tên là ' + title_is if title_is else ''}")
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            for book in self._app.books:
+                match = False
+                if title_is and book.name == title_is:
+                    match = True
+                elif title_contains and title_contains in book.name:
+                    match = True
+                
+                if match:
+                    print(f"SUCCESS: Đã tìm thấy workbook '{book.name}'.")
+                    return Workbook(book, self)
+            
+            time.sleep(1) # Chờ 1 giây trước khi kiểm tra lại
+
+        print(f"ERROR: Hết thời gian chờ ({timeout}s). Không tìm thấy workbook thỏa mãn điều kiện.")
         return None
 
     def quit(self):
@@ -145,3 +149,4 @@ class ExcelApp:
             print("INFO: Đã gửi lệnh buộc đóng.")
         except Exception as e:
             print(f"ERROR: Không thể thực thi lệnh taskkill. Lỗi: {e}")
+
